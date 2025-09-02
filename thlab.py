@@ -5,7 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
-df = pd.read_csv('C:/Users/gnana/Downloads/sysmon.csv', parse_dates=["Timestamp"])
+df = pd.read_csv('sysmon.csv', parse_dates=["Timestamp"])
 df = df.sort_values("Timestamp")
 E_PROC, E_NET, E_OK, E_FAIL, E_LOGOFF = 1, 3, 4624, 4625, 4634
 print(f"Loaded {len(df)} events")
@@ -54,38 +54,26 @@ plt.show()
 # ============================================================================
 # SPARKLINES - All users activity over time in single graph
 # ============================================================================
-plt.figure(figsize=(14, 8))
-users = df['User'].unique()
-colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
-for i, user in enumerate(users):
-    user_data = df[df['User'] == user].set_index('Timestamp')
-    hourly_counts = user_data.resample('h').size()
-    color = colors[i % len(colors)]  # Cycle through colors if more users than colors
-    plt.plot(hourly_counts.index, hourly_counts.values,
-             color=color, linewidth=2, label=f'{user}', marker='o', markersize=3)
-plt.title('User Activity Sparklines - All Users Comparison', fontsize=16)
-plt.xlabel('Time')
-plt.ylabel('Events per Hour')
-plt.legend(bbox_to_anchor=(1, 1), loc='upper left')
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
+plt.figure(figsize=(12,6))
+for user, g in df.groupby("User"):
+    hourly = g.resample("h", on="Timestamp").size()
+    plt.plot(hourly.index, hourly.values, marker='o', markersize=3, label=user)
+plt.title("User Activity per Hour")
+plt.xlabel("Time")
+plt.ylabel("Events")
 plt.show()
 
 # ============================================================================
 # sparklines - user level - event id
 # ============================================================================
 df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
-unique_eventids = sorted(df["EventID"].unique())
-eventid_map = {eid: idx for idx, eid in enumerate(unique_eventids)}
-df["EventID_mapped"] = df["EventID"].map(eventid_map)
-users = df["User"].unique()
-for user in users:
-    user_df = df[df["User"] == user]
-    plt.figure(figsize=(10, 2))  # sparkline style
-    plt.plot(user_df["Timestamp"], user_df["EventID_mapped"], linewidth=1, marker="o", markersize=3)
-    plt.yticks(range(len(unique_eventids)), unique_eventids, fontsize=6)  # show actual EventIDs on y-axis
+event_ids = sorted(df["EventID"].unique())
+df["EventID_mapped"] = df["EventID"].map({eid: i for i, eid in enumerate(event_ids)})
+for user, g in df.groupby("User"):
+    plt.figure(figsize=(10,2))
+    plt.plot(g["Timestamp"], g["EventID_mapped"], marker="o", ms=3, lw=1)
+    plt.yticks(range(len(event_ids)), event_ids, fontsize=6)
     plt.title(f"User: {user}", fontsize=8, loc="left")
-    plt.tight_layout()
     plt.show()
 
 # ============================================================================
@@ -111,7 +99,7 @@ for user in df['User'].dropna().unique():
       failure_time = []
       
 # ============================================================================
-# Question 2 - Suspicious process launch: powershell with encoded commands or mimikatz.exe.
+# Question 2
 # ============================================================================
 procs = df[df['EventID'] == 1] #Event process create
 pats = [r'mimikatz\.exe', r'powershell.* -EncodedCommand', r'powershell.* -e', r'powershell.* -enc']
@@ -124,7 +112,7 @@ else:
     print("No suspicious process launches found.")
 
 # ============================================================================
-# Question 3 - Network connection to rare/malicious IPs multiple times from the same user.
+# Question 3
 # ============================================================================
 network_connections = df[df['EventType'] == 'NetworkConnect']
 connection_counts = network_connections.groupby(['User', 'DestinationIp']).size().reset_index(name='Count')
@@ -136,7 +124,7 @@ else:
     print("No users found making multiple connections to the same IP.")
 
 # ============================================================================
-# Question 4 - Short login-logout sessions (<10 mins) for some users.
+# Question 4
 # ============================================================================
 user_sessions = {}
 for index, row in df.iterrows():
@@ -152,7 +140,6 @@ for index, row in df.iterrows():
             session_duration = timestamp - user_sessions[user]['login_time']
             if session_duration.total_seconds() / 60 < 10:
                 print(f"User '{user}' had a short session of {session_duration}")
-
         user_sessions[user]['login_time'] = None
 
 # Also create a summary of total activity per user //optional - to see last - for spark lines

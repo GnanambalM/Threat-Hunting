@@ -152,4 +152,13 @@ for index, row in df.iterrows():
             session_duration = timestamp - user_sessions[user]['login_time']
             if session_duration.total_seconds() / 60 < 10:
                 print(f"User '{user}' had a short session of {session_duration}")
+
         user_sessions[user]['login_time'] = None
+
+# Also create a summary of total activity per user //optional - to see last - for spark lines
+print("\nUser Activity Summary:")
+user_activity = df['User'].value_counts().sort_values(ascending=False)
+for user, count in user_activity.items():
+    print(f"  {user}: {count} total events")
+print(f"\nMost active user: {user_activity.index[0]} ({user_activity.iloc[0]} events)")
+print(f"Least active user: {user_activity.index[-1]} ({user_activity.iloc[-1]} events)")

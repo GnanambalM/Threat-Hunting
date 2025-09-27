@@ -221,3 +221,83 @@ Conversations / Endpoints → top talkers (by bytes/packets).
 Time sequence → timeline of events (use frame numbers/time).
 Follow streams & Export Objects → get files and credentials.
 Use display filters above to answer specific exam questions.
+Step 1
+http → PDFs, executables, images.
+ftp-data → uploaded/downloaded files.
+smtp → email attachments.
+smb2 → Windows file shares.
+Step 2
+Right click a packet → Follow → TCP Stream or Follow → HTTP Stream.
+Look for file headers (magic numbers).
+Common file signatures:
+%PDF → PDF file
+PK → ZIP / DOCX / XLSX / JAR (since they are zipped)
+MZ → Windows EXE/DLL
+GIF89a or PNG or JFIF → images
+(a) Find if there are any remote attempts made to the system
+What to look for: unusual inbound connection attempts, many SYNs from one remote IP to your host, repeated login attempts, connections to unusual ports, or RST/ICMP unreachable responses.
+Quick filters to surface “remote attempts” (replace <victim_ip>):
+# Any traffic to victim (start here)
+ip.dst == <victim_ip>
+# SYN-only attempts (common sign of connection attempts / scans)
+tcp.flags.syn == 1 && tcp.flags.ack == 0 && ip.dst == <victim_ip>
+# Many different destination ports to same victim → scanning
+ip.dst == <victim_ip> && (tcp.flags.syn == 1 && tcp.flags.ack == 0)
+# ICMP unreachable or port unreachable (failed attempts)
+icmp && ip.dst == <victim_ip>
+# For UDP-based probing (lots of small UDP packets to many ports)
+udp && ip.dst == <victim_ip>
+Replace <victim_ip> with the host you’re investigating.
+Apply the SYN-only filter to see inbound connection attempts. If one remote IP shows many result lines to many ports → remote scan/attempts.
+Use Statistics → Conversations → IPv4 and sort by packets to find top remote talkers.
+(b) Filter the traffic for the suspicious one
+Assuming you identified a suspicious remote IP (call it <remote_ip>) from (a), filter only traffic between that remote IP and the victim.
+# Traffic between victim and the suspicious remote IP
+ip.addr == <victim_ip> && ip.addr == <remote_ip>
+# Only inbound from remote to victim
+ip.src == <remote_ip> && ip.dst == <victim_ip>
+# Only outbound from victim to remote
+ip.src == <victim_ip> && ip.dst == <remote_ip>
+Tip: After applying the filter, right-click a packet → Follow → TCP Stream (or UDP/HTTP) to see the full conversation and payload. Export objects if file transfers are present.
+(c) Filter by specific IP address
+Single-host filters — copy/paste and replace <ip>:
+# Any packet to/from the IP
+ip.addr == <ip>
+# Packets sent from the IP
+ip.src == <ip>
+# Packets sent to the IP
+ip.dst == <ip>
+Variants:
+Combine with protocol: ip.addr == <ip> && http
+Combine with time/frame: ip.addr == <ip> && frame.number >= 100 && frame.number <= 500
+(d) Filter by specific port
+Replace <port> with the numeric port and optionally <ip> to narrow.
+tcp.port == <port> || udp.port == <port>    # Any traffic using TCP or UDP port (source OR destination)
+tcp.dstport == <port>    # Only TCP destination port
+tcp.srcport == <port>    # Only TCP source port
+ip.dst == <victim_ip> && tcp.dstport == 4444    # Narrow to a host and port: traffic to victim IP on port 4444
+Common ports to check: 22 (SSH), 443 (HTTPS), 80 (HTTP), 445 (SMB), 21 (FTP), 3389 (RDP), 4444/8080/1337 (often C2/reverse shells).
+(e) Filter by TCP flags
+Basic flag filters:
+tcp.flags.syn == 1    # SYN packet
+tcp.flags.syn == 1 && tcp.flags.ack == 0    # SYN without ACK (initial connect attempt)
+tcp.flags.syn == 1 && tcp.flags.ack == 1    # SYN+ACK (server reply)
+tcp.flags.ack == 1    # ACK packets
+tcp.flags.reset == 1    # RST (reset)
+# abbreviated alias also works: tcp.flags.rst == 1
+tcp.flags.fin == 1    # FIN (connection close)
+tcp.flags.push == 1    # PSH (push)
+tcp.flags.urg == 1    # URG (urgent)
+Compound suspicious patterns:
+tcp.flags.syn==1 && tcp.flags.ack==0 && ip.src == <remote_ip>    # Lots of SYNs from one source → scan
+tcp.flags.reset == 1 && ip.addr == <victim_ip>    # Many RSTs (e.g., aborted connections)
+tcp.flags.fin == 1 && tcp.len == 0    # FIN probes (rare but used in scanning)
+Counting / summarizing: After filtering, use Statistics → Conversations or Statistics → Endpoints, or use Analyze → Statistics → IO Graphs to plot SYN counts or RSTs over time.
+tshark -r capture.pcap -Y "tcp.flags.syn==1 && tcp.flags.ack==0" -T fields -e ip.src | sort | uniq -c | sort -nr    # Count SYN (connection attempts) per source IP
+tshark -r capture.pcap -Y "ip.addr==<victim_ip> && ip.addr==<remote_ip>"    # Show all packets between victim and remote
+tshark -r capture.pcap -q -z "follow,tcp,raw,5"    # Extract TCP stream payload to file for stream 5
+Open pcap → Statistics → Protocol Hierarchy → spot suspicious protocols.
+Statistics → Conversations → find top remote IPs to victim.
+Apply tcp.flags.syn==1 && tcp.flags.ack==0 && ip.dst==<victim_ip> to find connection attempts.
+Take the most frequent ip.src from step 3 → apply ip.src==<that_ip> && ip.dst==<victim_ip> for the full interaction.
+Follow stream / export objects / check payloads and flags (RST/FIN) for success/failure.
